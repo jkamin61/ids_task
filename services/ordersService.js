@@ -1,43 +1,65 @@
 const axios = require('axios');
+const pool = require('../db/ordersPg.js');
 require('dotenv').config();
 
 const API_KEY = process.env.API_KEY;
 const API_URL = process.env.API_URL;
 
-let ordersCache = [];
-
 const fetchOrders = async () => {
-    try {
+    let orders = [];
+    let pageNumber = 6;
+    const pageSize = 100;
+
+    while (true) {
         const response = await axios.get(API_URL, {
             headers: {
                 'X-API-KEY': API_KEY,
                 'Accept': 'application/json'
             },
-            params: {
-                page: 1
-            }
+            params: {pageNumber, pageSize}
         });
 
-        if (!response.data || !response.data.Results) {
-            throw new Error("No data in response");
+        if (!response.data || !response.data.Results || response.data.Results.length === 0) {
+            break;
         }
 
-        const orders = response.data.Results.map(order => ({
+        orders = response.data.Results.map(order => ({
             orderID: order.orderId,
-            products: order.orderDetails.productsResults.map(product => ({
-                productID: product.productId,
-                quantity: product.productQuantity
-            })),
-            orderWorth: order.orderDetails.payments.orderBaseCurrency.orderProductsCost || 0
+            products: JSON.stringify(
+                order.orderDetails.productsResults.map(product => ({
+                    productID: product.productId,
+                    quantity: product.productQuantity
+                }))
+            ),
+            orderWorth: order.orderDetails.payments.orderBaseCurrency.orderProductsCost || 0,
+            orderDate: order.orderDetails.orderAddDate || new Date().toISOString()
         }));
-        ordersCache = orders;
-        return orders;
-    } catch (error) {
-        console.error('Error while fetching orders:', error.message);
+
+        pageNumber++;
+    }
+    await saveOrdersToDB(orders);
+
+};
+
+
+const saveOrdersToDB = async (orders) => {
+    if (orders.length === 0) {
+        return;
+    }
+
+    for (let order of orders) {
+        try {
+            await pool.query(
+                `INSERT INTO orders (order_id, products, order_worth, order_date)
+                 VALUES ($1, $2, $3, $4)`,
+                [order.orderID, JSON.stringify(order.products), order.orderWorth, order.orderDate]
+            );
+        } catch (error) {
+            console.error(error.message);
+        }
     }
 };
 
-fetchOrders();
 setInterval(fetchOrders, 24 * 60 * 60 * 1000);
 
-module.exports = { fetchOrders };
+module.exports = {fetchOrders};
