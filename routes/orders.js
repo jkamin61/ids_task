@@ -1,8 +1,34 @@
 const express = require('express');
-const { fetchOrders } = require('../services/ordersService');
-const { parse } = require('json2csv');
+const {fetchOrders} = require('../services/ordersService');
+const {parse} = require('json2csv');
+const pool = require('../db/ordersPg');
 
 const router = express.Router();
+
+router.get('/fetch', async (req,res) => {
+try {
+    const response = await fetchOrders();
+} catch (error) {
+    console.error(error);
+    res.status(500).json({error: 'Failed fetching orders'})
+}
+})
+
+router.get('/', async (req, res) => {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = (page - 1) * limit;
+
+    try {
+        const result = await pool.query(`SELECT *
+                                         FROM orders
+                                         ORDER BY orderDate DESC LIMIT $1
+                                         OFFSET $2`, [limit, offset]);
+        res.json({success: true, data: result.rows});
+    } catch (error) {
+        res.status(500).json({error: 'DB query failed'});
+    }
+});
 
 router.get('/csv', async (req, res) => {
     try {
@@ -27,7 +53,7 @@ router.get('/:orderId', async (req, res) => {
         const order = orders.find(o => o.orderID === req.params.orderId);
 
         if (!order) {
-            console.log("Could not find order:", req.params.orderId);
+            console.error("Could not find order:", req.params.orderId);
             return res.status(404).json({
                 success: false,
                 status: 404,
