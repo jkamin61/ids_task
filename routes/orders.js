@@ -5,14 +5,14 @@ const pool = require('../db/ordersPg');
 
 const router = express.Router();
 
-router.get('/fetch', async (req,res) => {
-try {
-    const response = await fetchOrders();
-} catch (error) {
-    console.error(error);
-    res.status(500).json({error: 'Failed fetching orders'})
-}
-})
+router.get('/fetch', async (req, res) => {
+    try {
+        await fetchOrders();
+        res.json({success: true, message: 'Orders fetched and saved to DB.'});
+    } catch (error) {
+        res.status(500).json({error: 'Failed fetching orders'});
+    }
+});
 
 router.get('/', async (req, res) => {
     const page = parseInt(req.query.page) || 1;
@@ -22,50 +22,48 @@ router.get('/', async (req, res) => {
     try {
         const result = await pool.query(`SELECT *
                                          FROM orders
-                                         ORDER BY orderDate DESC LIMIT $1
+                                         ORDER BY order_date DESC LIMIT $1
                                          OFFSET $2`, [limit, offset]);
-        res.json({success: true, data: result.rows});
+        res.json({
+            success: true,
+            status: 200,
+            data: result.rows
+        });
     } catch (error) {
-        res.status(500).json({error: 'DB query failed'});
+        res.status(500).json({success: false, message: 'Internal server error'});
     }
 });
 
 router.get('/csv', async (req, res) => {
     try {
-        let filteredOrders = await fetchOrders();
         const {minWorth, maxWorth} = req.query;
-        if (minWorth) filteredOrders = filteredOrders.filter(o => o.orderWorth >= parseFloat(minWorth));
-        if (maxWorth) filteredOrders = filteredOrders.filter(o => o.orderWorth <= parseFloat(maxWorth));
+        const result = await pool.query('SELECT * FROM orders');
+        let orders = result.rows;
 
-        const csv = parse(filteredOrders, {fields: ['orderID', 'orderWorth', 'products']});
-        res.header('Content-Type', 'text/csv');
-        res.attachment('orders.csv');
-        res.send(csv);
+        if (minWorth) orders = orders.filter(o => o.order_worth >= parseFloat(minWorth));
+        if (maxWorth) orders = orders.filter(o => o.order_worth <= parseFloat(maxWorth));
+
+        const csv = parse(orders, {fields: ['order_id', 'order_worth', 'products']});
+        res.status(200)
+            .header('Content-Type', 'text/csv')
+            .attachment('orders.csv')
+            .send(csv);
     } catch (error) {
-        console.error('Error handling request:\n', error.message);
-        res.status(500).json({error: 'Internal Server Error'});
+        res.status(500).json({
+            success: false,
+            status: 500,
+            message: 'Failed to export CSV file. Please try again later.'
+        });
     }
 });
 
 router.get('/:orderId', async (req, res) => {
     try {
-        const orders = await fetchOrders();
-        const order = orders.find(o => o.orderID === req.params.orderId);
-
-        if (!order) {
-            console.error("Could not find order:", req.params.orderId);
-            return res.status(404).json({
-                success: false,
-                status: 404,
-                message: "Order not found",
-                orderID: req.params.orderId
-            });
+        const {rows} = await pool.query('SELECT * FROM orders WHERE order_id = $1', [req.params.orderId]);
+        if (rows.length === 0) {
+            return res.status(404).json({success: false, message: 'Order not found'});
         }
-        res.json({
-            success: true,
-            status: 200,
-            data: order
-        });
+        res.json({success: true, data: rows[0]});
     } catch (error) {
         console.error('Error handling request:\n', error.message);
         res.status(500).json({
