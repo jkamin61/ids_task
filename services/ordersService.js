@@ -5,10 +5,17 @@ require('dotenv').config();
 const API_KEY = process.env.API_KEY;
 const API_URL = process.env.API_URL;
 
-const fetchOrders = async () => {
+const fetchOrders = async (fromDate = null) => {
     let resultsPage = 0;
     const resultsLimit = 100;
     let hasMoreData = true;
+
+    if (!fromDate) {
+        const { rows } = await pool.query('SELECT MAX(order_date) as max_date FROM orders');
+        if (rows[0].max_date) {
+            fromDate = rows[0].max_date.toISOString().split('T')[0];
+        }
+    }
 
     try {
         while (hasMoreData) {
@@ -18,6 +25,7 @@ const fetchOrders = async () => {
                     params: {
                         resultsPage: resultsPage,
                         resultsLimit: resultsLimit,
+                        ...(fromDate && { fromDate: fromDate })
                     }
                 },
                 {

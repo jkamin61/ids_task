@@ -6,11 +6,21 @@ const pool = require('../db/ordersPg');
 const router = express.Router();
 
 router.get('/fetch', async (req, res) => {
+    const {fromDate} = req.query;
+
     try {
-        await fetchOrders();
-        res.json({success: true, message: 'Orders fetched and saved to DB.'});
+        await fetchOrders(fromDate);
+        res.json({
+            success: true,
+            status: 200,
+            message: `Orders fetched and saved to database${fromDate ? ` from ${fromDate}` : ''}.`
+        });
     } catch (error) {
-        res.status(500).json({error: 'Failed fetching orders'});
+        res.status(500).json({
+            success: false,
+            status: 500,
+            message: 'Failed fetching orders'
+        });
     }
 });
 
